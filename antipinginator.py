@@ -1,18 +1,7 @@
 import discord
 import datetime
 import asyncio
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-ALEX_ID = int(os.getenv("ALEX_ID")) # My Discord user ID
-SPAM_WINDOW = 60 # Spam ping detection window, in seconds
-TRACKING_PERIOD = 180 # Grace period before retaliatory ping sequence, in seconds
-PING_DELAY = 1.0 # Delay between each ping in spam in seconds
-SPAM_THRESHOLD = 2 # Amount of pings needed to initiate return/retaliatory pings
-RETURN_PINGS = 3 # Amount of return pings
-SPAM_PING_COUNT = 20 # Amount of !spam pings
+from config import *
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -22,25 +11,36 @@ cover = asyncio.Lock()
 
 dirty_pingers = {} # Used for immediate return pings
 pingers_retaliatory_count = {} # Used for delayed retaliatory ping spam
-spam_queue = {} # Keeps track of how much spamming needed for each user for the !spam command
+spam_queues = {} # Keeps track of how much spamming needed for each user for the !spam command, for each server
 tracking_task = None
 
 @client.event
 async def on_ready():
     print(f'Successfully logged in as {client.user}')
-    await initialize_users()
+    for guild in client.guilds:
+        await initialize_users(guild)
 
-# Initialize spam queue with all users in the server
-async def initialize_users():
+# Initialize spam queue with all users in a server
+async def initialize_users(guild):
     async with cover:
-        for guild in client.guilds:
-            for member in guild.members:
-                spam_queue[member.id] = 0
+        if guild.id not in spam_queues:
+            spam_queues[guild.id] = {}
+        for member in guild.members:
+            if member.id not in spam_queues[guild.id]:
+                spam_queues[guild.id][member.id] = 0
+        print(f'Initialized {guild.name} server in spam_queues')
+        
+
+@client.event
+async def on_guild_join(guild):
+    # Handle new servers when the bot joins
+    initialize_users(guild)
+    print(f'Joined new server: {guild.name}')
 
 @client.event
 async def on_member_join(member):
     async with cover:
-        spam_queue[member.id] = 0
+        spam_queues[member.guild.id][member.id] = 0
 
 @client.event
 async def on_message(message):
@@ -48,8 +48,14 @@ async def on_message(message):
     if message.author == client.user:
         return
     
+    # Get my roles
+    alex = message.guild.get_member(ADMIN_ID) # None if I'm not in server
+    alex_roles = alex.roles if alex else []
+
     # Return ping sequence -- PING_THRESHOLD pings to me within TRACKING_INTERVAL causes ping spam in return to sender
-    if any((user.id == ALEX_ID or user == client.user) for user in message.mentions):
+    if any((user.id == ADMIN_ID or user == client.user) for user in message.mentions) or \
+                            any(role in alex_roles for role in message.role_mentions) or \
+                            '@everyone' in message.content or '@here' in message.content:
         global tracking_task
         async with cover:
             if message.author.id not in dirty_pingers:
@@ -87,15 +93,15 @@ async def on_message(message):
 
 async def do_return_pings(message):
     for _ in range(RETURN_PINGS):
-        await message.channel.send(f'Silence, {message.author.mention} <:Pingsock:1327368283778711694>')
+        await message.channel.send(f'Silence, {message.author.mention} {EMOTES['Pingsock']}')
+        await asyncio.sleep(PING_DELAY)
     # Clear user's immediate pings
     dirty_pingers[message.author.id] = []
 
-#TODO: make spam command an event in order to implement rate limiting and stacked spam sequences
 async def spam_command(message):
     target = message.mentions[0]
     # Me and the bot cannot be spam pinged
-    if target == client.user or target.id == ALEX_ID:
+    if target == client.user or target.id == ADMIN_ID:
         for _ in range(RETURN_PINGS):
             await message.channel.send(f'<@{message.author.id}> Nice try loser. You cannot spam me')
             await asyncio.sleep(PING_DELAY)
@@ -104,26 +110,25 @@ async def spam_command(message):
     # Handle the spam queue system
     async with cover:
         # Ignore !spam request if target is already being spammed
-        if spam_queue[target.id] > 0:
+        if spam_queues[message.guild.id][target.id] > 0:
             return
-        spam_queue[target.id] = SPAM_PING_COUNT # target is to receive SPAM_PING_COUNT pings
+        spam_queues[message.guild.id][target.id] = SPAM_PING_COUNT # target is to receive SPAM_PING_COUNT pings
 
     # Perform ping spam
-    while any(count > 0 for count in spam_queue.values()):
-        await send_ping(message, spam_queue)
+    while any(count > 0 for count in spam_queues[message.guild.id].values()):
+        await send_ping(message, spam_queues[message.guild.id])
 
 async def start_tracking(message):
     await asyncio.sleep(TRACKING_PERIOD)
 
     async with cover:
-        global pingers_retaliatory_count
+        global pingers_retaliatory_count, tracking_task
         # Collect ping counts for each user, include if SPAM_THRESHOLD reached
         pings_to_send = {user_id: count for user_id, count in pingers_retaliatory_count.items() if count >= SPAM_THRESHOLD}
         pingers_retaliatory_count = {}
-        global tracking_task
         tracking_task = None # Reset tracking task
     
-    await message.channel.send(f'I have been transgressed. You will now repent for your sins, miscreants! TATAKAE!!!')
+    await message.channel.send(f'I have been transgressed! Pay for your sins, miscreants!')
     await asyncio.sleep(PING_DELAY)
     while any(count > 0 for count in pings_to_send.values()):
         await send_ping(message, pings_to_send)
@@ -139,7 +144,5 @@ async def send_ping(message, pings_to_send):
                 pings_to_send[user_id] -= 1
     
     await asyncio.sleep(PING_DELAY)
-
-# TODO: Future feature? !remind <amount> <time units> [Reminder string]
 
 client.run(DISCORD_TOKEN)

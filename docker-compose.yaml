@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  discord-bot:
+    image: python:3.13.1
+    container_name: antipinginator_bot
+    volumes:
+      - ./Antipinginator:/app
+    working_dir: /app
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - ALEX_ID=${ALEX_ID}
+    command: ["python", "antipinginator.py"]
