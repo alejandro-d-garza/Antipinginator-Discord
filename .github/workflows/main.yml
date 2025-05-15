@@ -27,4 +27,4 @@ jobs:
       env:
         DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         ALEX_ID: ${{ secrets.ALEX_ID }}
-      run: python3 antipinginator.py
+      run: python3 main.py
