@@ -12,6 +12,10 @@ class TrackingCog(commands.Cog):
         self.tracking_task = None
 
     @commands.Cog.listener()
+    async def on_ready(self):
+        print("TrackingCog is ready!")
+
+    @commands.Cog.listener()
     async def on_message(self, message):
         if message.author == self.bot.user:
             return
@@ -61,7 +65,7 @@ class TrackingCog(commands.Cog):
             self.pingers_retaliatory_count = {}
             self.tracking_task = None
         
-        await message.channel.send(f"I have been transgressed. You will now repent for your sins! TATAKAE!!!")
+        await message.channel.send(f"Alas! I have been transgressed! Pay for thy sins, foul miscreants!")
         await asyncio.sleep(PING_DELAY)
 
         while any(count > 0 for count in pings_to_send.values()):
