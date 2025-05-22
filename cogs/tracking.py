@@ -7,8 +7,8 @@ class TrackingCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.cover = asyncio.Lock()
-        self.dirty_pingers = {}  # Stores timestamps of pings
-        self.pingers_retaliatory_count = {}  # Counts pings over time
+        self.ping_data = {}  # Stores timestamps of pings
+        self.retaliatory_pings = {}  # Counts pings over time
         self.tracking_task = None
 
     @commands.Cog.listener()
@@ -16,53 +16,52 @@ class TrackingCog(commands.Cog):
         print("TrackingCog is ready!")
 
     @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author == self.bot.user:
+    async def on_message(self, msg):
+        if msg.author == self.bot.user:
             return
 
         # Get admin's roles in the guild
-        admin = message.guild.get_member(ADMIN_ID)
+        admin = msg.guild.get_member(ADMIN_ID)
         admin_roles = admin.roles if admin else []
 
         # Check if admin is mentioned
-        if any((user.id == ADMIN_ID or user == self.bot.user) for user in message.mentions) or \
-           any(role in admin_roles for role in message.role_mentions) or \
-           '@everyone' in message.content or '@here' in message.content:
-           
-            async with self.cover:
-                if message.author.id not in self.dirty_pingers:
-                    self.dirty_pingers[message.author.id] = []
-                if message.author.id not in self.pingers_retaliatory_count:
-                    self.pingers_retaliatory_count[message.author.id] = 0
+        if any((user.id == ADMIN_ID or user == self.bot.user) for user in msg.mentions) or \
+           any(role in admin_roles for role in msg.role_mentions) or msg.mention_everyone:
 
-                self.dirty_pingers[message.author.id].append(message.created_at)
+            async with self.cover:
+                if msg.author.id not in self.ping_data:
+                    self.ping_data[msg.author.id] = []
+                if msg.author.id not in self.retaliatory_pings:
+                    self.retaliatory_pings[msg.author.id] = 0
+
+                self.ping_data[msg.author.id].append(msg.created_at)
 
                 # Clean up mentions older than SPAM_WINDOW
-                self.dirty_pingers[message.author.id] = [
-                    t for t in self.dirty_pingers[message.author.id] if (message.created_at - t).total_seconds() < SPAM_WINDOW
+                self.ping_data[msg.author.id] = [
+                    t for t in self.ping_data[msg.author.id] if (msg.created_at - t).total_seconds() < SPAM_WINDOW
                 ]
 
                 if self.tracking_task:
-                    self.pingers_retaliatory_count[message.author.id] += 1
+                    self.retaliatory_pings[msg.author.id] += 1
 
                 # If spammed, retaliate
-                if len(self.dirty_pingers[message.author.id]) >= SPAM_THRESHOLD:
-                    await self.do_return_pings(message)
+                if len(self.ping_data[msg.author.id]) >= SPAM_THRESHOLD:
+                    await self.do_return_pings(msg)
                     if not self.tracking_task:
-                        self.pingers_retaliatory_count[message.author.id] = SPAM_THRESHOLD
-                        self.tracking_task = asyncio.create_task(self.start_tracking(message))
+                        self.retaliatory_pings[msg.author.id] = SPAM_THRESHOLD
+                        self.tracking_task = asyncio.create_task(self.start_tracking(msg))
 
-    async def do_return_pings(self, message):
+    async def do_return_pings(self, msg):
         for _ in range(RETURN_PINGS):
-            await message.channel.send(f"Silence, {message.author.mention} <:Pingsock:1317712720006615150>")
+            await msg.channel.send(f"Silence, {msg.author.mention} <:Pingsock:1317712720006615150>")
             await asyncio.sleep(PING_DELAY)
 
     async def start_tracking(self, message):
         await asyncio.sleep(TRACKING_PERIOD)
 
         async with self.cover:
-            pings_to_send = {user_id: count for user_id, count in self.pingers_retaliatory_count.items() if count >= SPAM_THRESHOLD}
-            self.pingers_retaliatory_count = {}
+            pings_to_send = {user_id: count for user_id, count in self.retaliatory_pings.items() if count >= SPAM_THRESHOLD}
+            self.retaliatory_pings = {}
             self.tracking_task = None
         
         await message.channel.send(f"Alas! I have been transgressed! Pay for thy sins, foul miscreants!")

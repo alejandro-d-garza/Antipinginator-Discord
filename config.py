@@ -12,9 +12,9 @@ RETURN_PINGS = 3 # Amount of return pings
 SPAM_PING_COUNT = 30 # Amount of !spam pings
 
 # List of cogs to load
-COGS = ["cogs.spam", "cogs.tracking"]
+COGS = ["cogs.spam", "cogs.tracking", "cogs.offline_pings"]
 # Emote IDs that you want this bot to use
 EMOTES = {'Pingsock': '<:Pingsock:1317712720006615150>'}
 
 if not DISCORD_TOKEN:
-    raise ValueError("No Discord token provided. Make sure it's set in the environment variables.")
+    raise ValueError("No Discord API token provided. Make sure it's set in the environment variables.")

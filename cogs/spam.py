@@ -16,6 +16,7 @@ class SpamCog(commands.Cog):
     @commands.command()
     async def spam(self, ctx, member: discord.Member):
         """Spams a user with mentions. Called on command with !spam."""
+
         if member == self.bot.user or member.id == ADMIN_ID:
             await ctx.send(f"Nice try {ctx.author.mention}, you cannot spam me.")
             return
@@ -38,8 +39,6 @@ class SpamCog(commands.Cog):
                 if not queue:
                     break  # No more users to spam, exit task
 
-                # Prepare the message with all users being spammed
-                mentions = [f"<@{uid}>" for uid in queue.keys()]
                 message = " | ".join(f"<@{uid}> [{queue[uid]}]" for uid in queue.keys())
 
                 # Decrement spam counts
